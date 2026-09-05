@@ -1,0 +1,102 @@
+name: Build Laugh & Chat APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+
+      - name: Extract Laugh & Chat project
+        run: |
+          mkdir -p extracted
+          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" -print -quit)
+          unzip -q "$ZIP_FILE" -d extracted
+          PROJECT_DIR=$(find extracted -name pubspec.yaml -print -quit | xargs dirname)
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Create complete Flutter Android project
+        run: |
+          flutter create \
+            --platforms=android \
+            --org com.humblet \
+            --project-name laughandchat \
+            build_app
+
+      - name: Copy Laugh & Chat files
+        run: |
+          cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
+          cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
+          mkdir -p build_app/android/app
+          cp "$PROJECT_DIR/android/app/google-services.json" \
+             build_app/android/app/google-services.json
+
+      - name: Configure Firebase Google Services
+        working-directory: build_app
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          settings = Path("android/settings.gradle")
+          text = settings.read_text()
+
+          marker = 'id "org.jetbrains.kotlin.android"'
+          if marker in text and 'com.google.gms.google-services' not in text:
+              lines = text.splitlines()
+              for i, line in enumerate(lines):
+                  if marker in line:
+                      lines.insert(
+                          i + 1,
+                          '    id "com.google.gms.google-services" version "4.5.0" apply false'
+                      )
+                      break
+              settings.write_text("\n".join(lines) + "\n")
+
+          app = Path("android/app/build.gradle")
+          text = app.read_text()
+
+          if 'id "com.google.gms.google-services"' not in text:
+              text = text.replace(
+                  "plugins {",
+                  'plugins {\n    id "com.google.gms.google-services"',
+                  1
+              )
+              app.write_text(text)
+          PY
+
+      - name: Get dependencies
+        working-directory: build_app
+        run: flutter pub get
+
+      - name: Show Android signing SHA-1
+        working-directory: build_app
+        run: |
+          keytool -list -v \
+            -alias androiddebugkey \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -keypass android | grep "SHA1:"
+
+      - name: Build APK
+        working-directory: build_app
+        run: flutter build apk --debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: laugh-and-chat-apk
+          path: build_app/build/app/outputs/flutter-apk/app-debug.apk
