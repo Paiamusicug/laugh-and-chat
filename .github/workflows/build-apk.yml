@@ -24,13 +24,22 @@ jobs:
       - name: Extract Laugh & Chat project
         run: |
           mkdir -p extracted
-          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" -print -quit)
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" -print -quit)
+
           if [ -z "$ZIP_FILE" ]; then
             echo "No Laugh & Chat ZIP file found."
             exit 1
           fi
+
           unzip -q "$ZIP_FILE" -d extracted
+
           PROJECT_DIR=$(find extracted -name pubspec.yaml -print -quit | xargs dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "pubspec.yaml was not found."
+            exit 1
+          fi
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Create complete Flutter Android project
@@ -45,6 +54,9 @@ jobs:
         run: |
           cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
           cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
+
+          mkdir -p build_app/android/app
+
           cp "$PROJECT_DIR/android/app/google-services.json" \
              build_app/android/app/google-services.json
 
@@ -53,97 +65,103 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          android = Path("build_app/android")
+          settings_candidates = [
+              Path("build_app/android/settings.gradle.kts"),
+              Path("build_app/android/settings.gradle"),
+          ]
 
-          settings = None
-          for name in ["settings.gradle", "settings.gradle.kts"]:
-              candidate = android / name
-              if candidate.exists():
-                  settings = candidate
-                  break
+          app_candidates = [
+              Path("build_app/android/app/build.gradle.kts"),
+              Path("build_app/android/app/build.gradle"),
+          ]
 
-          app = None
-          for name in ["build.gradle", "build.gradle.kts"]:
-              candidate = android / "app" / name
-              if candidate.exists():
-                  app = candidate
-                  break
+          settings = next((p for p in settings_candidates if p.exists()), None)
+          app = next((p for p in app_candidates if p.exists()), None)
 
           if settings is None:
-              print("Android settings file was not found.")
-              print("Files in android folder:")
-              for p in android.iterdir():
-                  print(p)
-              raise SystemExit(1)
+              raise SystemExit(
+                  "Could not find settings.gradle or settings.gradle.kts"
+              )
 
           if app is None:
-              print("Android app Gradle file was not found.")
-              raise SystemExit(1)
-
-          print("Using settings file:", settings)
-          print("Using app Gradle file:", app)
+              raise SystemExit(
+                  "Could not find app/build.gradle or app/build.gradle.kts"
+              )
 
           settings_text = settings.read_text()
+          app_text = app.read_text()
 
           if "com.google.gms.google-services" not in settings_text:
               if settings.suffix == ".kts":
-                  plugin_line = '    id("com.google.gms.google-services") version "4.5.0" apply false'
+                  plugin_line = (
+                      '    id("com.google.gms.google-services") '
+                      'version "4.5.0" apply false'
+                  )
               else:
-                  plugin_line = '    id "com.google.gms.google-services" version "4.5.0" apply false'
+                  plugin_line = (
+                      '    id "com.google.gms.google-services" '
+                      'version "4.5.0" apply false'
+                  )
 
-              lines = settings_text.splitlines()
-              inserted = False
+              if "plugins {" not in settings_text:
+                  raise SystemExit("No plugins block found in settings file.")
 
-              for i, line in enumerate(lines):
-                  if "dev.flutter.flutter-plugin-loader" in line:
-                      lines.insert(i + 1, plugin_line)
-                      inserted = True
-                      break
+              settings_text = settings_text.replace(
+                  "plugins {",
+                  "plugins {\n" + plugin_line,
+                  1
+              )
 
-              if not inserted:
-                  lines.insert(0, "plugins {")
-                  lines.insert(1, plugin_line)
-                  lines.insert(2, "}")
-
-              settings.write_text("\n".join(lines) + "\n")
-
-          app_text = app.read_text()
+              settings.write_text(settings_text)
 
           if "com.google.gms.google-services" not in app_text:
               if app.suffix == ".kts":
-                  app_text = app_text.replace(
-                      "plugins {",
-                      'plugins {\n    id("com.google.gms.google-services")',
-                      1
-                  )
+                  plugin_line = '    id("com.google.gms.google-services")'
               else:
-                  app_text = app_text.replace(
-                      "plugins {",
-                      'plugins {\n    id "com.google.gms.google-services"',
-                      1
-                  )
+                  plugin_line = '    id "com.google.gms.google-services"'
+
+              if "plugins {" not in app_text:
+                  raise SystemExit("No plugins block found in app file.")
+
+              app_text = app_text.replace(
+                  "plugins {",
+                  "plugins {\n" + plugin_line,
+                  1
+              )
 
               app.write_text(app_text)
 
-          print("Firebase Google Services configured successfully.")
+          print("Firebase configuration complete.")
+          print("Settings file:", settings)
+          print("App Gradle file:", app)
           PY
 
       - name: Get dependencies
         working-directory: build_app
-        run: flutter pub get
+        run: |
+          flutter pub get
 
       - name: Show Android signing fingerprints
         working-directory: build_app
         run: |
+          echo "SHA-1:"
           keytool -list -v \
             -alias androiddebugkey \
             -keystore "$HOME/.android/debug.keystore" \
             -storepass android \
-            -keypass android | grep -E "SHA1:|SHA256:"
+            -keypass android | grep "SHA1:"
+
+          echo "SHA-256:"
+          keytool -list -v \
+            -alias androiddebugkey \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -keypass android | grep "SHA256:"
 
       - name: Build APK
         working-directory: build_app
-        run: flutter build apk --debug
+        run: |
+          flutter build apk --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
