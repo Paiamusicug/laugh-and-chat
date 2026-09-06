@@ -141,22 +141,6 @@ jobs:
         run: |
           flutter pub get
 
-      - name: Show Android signing fingerprints
-        working-directory: build_app
-        run: |
-          echo "SHA-1:"
-          keytool -list -v \
-            -alias androiddebugkey \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -keypass android | grep "SHA1:"
-
-          echo "SHA-256:"
-          keytool -list -v \
-            -alias androiddebugkey \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -keypass android | grep "SHA256:"
 
       - name: Build APK
         working-directory: build_app
