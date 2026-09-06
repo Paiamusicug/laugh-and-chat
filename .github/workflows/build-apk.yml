@@ -41,41 +41,43 @@ jobs:
         run: |
           cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
           cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
-          mkdir -p build_app/android/app
           cp "$PROJECT_DIR/android/app/google-services.json" \
              build_app/android/app/google-services.json
 
       - name: Configure Firebase Google Services
-        working-directory: build_app
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          settings = Path("android/settings.gradle")
-          text = settings.read_text()
+          settings = Path("build_app/android/settings.gradle")
+          app = Path("build_app/android/app/build.gradle")
 
-          marker = 'id "org.jetbrains.kotlin.android"'
-          if marker in text and 'com.google.gms.google-services' not in text:
-              lines = text.splitlines()
+          settings_text = settings.read_text()
+
+          if 'com.google.gms.google-services' not in settings_text:
+              lines = settings_text.splitlines()
+
               for i, line in enumerate(lines):
-                  if marker in line:
+                  if 'id "org.jetbrains.kotlin.android"' in line:
                       lines.insert(
                           i + 1,
                           '    id "com.google.gms.google-services" version "4.5.0" apply false'
                       )
                       break
+
               settings.write_text("\n".join(lines) + "\n")
 
-          app = Path("android/app/build.gradle")
-          text = app.read_text()
+          app_text = app.read_text()
 
-          if 'id "com.google.gms.google-services"' not in text:
-              text = text.replace(
+          if 'id "com.google.gms.google-services"' not in app_text:
+              app_text = app_text.replace(
                   "plugins {",
                   'plugins {\n    id "com.google.gms.google-services"',
                   1
               )
-              app.write_text(text)
+              app.write_text(app_text)
+
+          print("Firebase Google Services configured successfully.")
           PY
 
       - name: Get dependencies
