@@ -25,6 +25,10 @@ jobs:
         run: |
           mkdir -p extracted
           ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" -print -quit)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No Laugh & Chat ZIP file found."
+            exit 1
+          fi
           unzip -q "$ZIP_FILE" -d extracted
           PROJECT_DIR=$(find extracted -name pubspec.yaml -print -quit | xargs dirname)
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
@@ -49,32 +53,76 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          settings = Path("build_app/android/settings.gradle")
-          app = Path("build_app/android/app/build.gradle")
+          android = Path("build_app/android")
+
+          settings = None
+          for name in ["settings.gradle", "settings.gradle.kts"]:
+              candidate = android / name
+              if candidate.exists():
+                  settings = candidate
+                  break
+
+          app = None
+          for name in ["build.gradle", "build.gradle.kts"]:
+              candidate = android / "app" / name
+              if candidate.exists():
+                  app = candidate
+                  break
+
+          if settings is None:
+              print("Android settings file was not found.")
+              print("Files in android folder:")
+              for p in android.iterdir():
+                  print(p)
+              raise SystemExit(1)
+
+          if app is None:
+              print("Android app Gradle file was not found.")
+              raise SystemExit(1)
+
+          print("Using settings file:", settings)
+          print("Using app Gradle file:", app)
 
           settings_text = settings.read_text()
 
-          if 'com.google.gms.google-services' not in settings_text:
+          if "com.google.gms.google-services" not in settings_text:
+              if settings.suffix == ".kts":
+                  plugin_line = '    id("com.google.gms.google-services") version "4.5.0" apply false'
+              else:
+                  plugin_line = '    id "com.google.gms.google-services" version "4.5.0" apply false'
+
               lines = settings_text.splitlines()
+              inserted = False
 
               for i, line in enumerate(lines):
-                  if 'id "org.jetbrains.kotlin.android"' in line:
-                      lines.insert(
-                          i + 1,
-                          '    id "com.google.gms.google-services" version "4.5.0" apply false'
-                      )
+                  if "dev.flutter.flutter-plugin-loader" in line:
+                      lines.insert(i + 1, plugin_line)
+                      inserted = True
                       break
+
+              if not inserted:
+                  lines.insert(0, "plugins {")
+                  lines.insert(1, plugin_line)
+                  lines.insert(2, "}")
 
               settings.write_text("\n".join(lines) + "\n")
 
           app_text = app.read_text()
 
-          if 'id "com.google.gms.google-services"' not in app_text:
-              app_text = app_text.replace(
-                  "plugins {",
-                  'plugins {\n    id "com.google.gms.google-services"',
-                  1
-              )
+          if "com.google.gms.google-services" not in app_text:
+              if app.suffix == ".kts":
+                  app_text = app_text.replace(
+                      "plugins {",
+                      'plugins {\n    id("com.google.gms.google-services")',
+                      1
+                  )
+              else:
+                  app_text = app_text.replace(
+                      "plugins {",
+                      'plugins {\n    id "com.google.gms.google-services"',
+                      1
+                  )
+
               app.write_text(app_text)
 
           print("Firebase Google Services configured successfully.")
@@ -84,14 +132,14 @@ jobs:
         working-directory: build_app
         run: flutter pub get
 
-      - name: Show Android signing SHA-1
+      - name: Show Android signing fingerprints
         working-directory: build_app
         run: |
           keytool -list -v \
             -alias androiddebugkey \
             -keystore "$HOME/.android/debug.keystore" \
             -storepass android \
-            -keypass android | grep "SHA1:"
+            -keypass android | grep -E "SHA1:|SHA256:"
 
       - name: Build APK
         working-directory: build_app
