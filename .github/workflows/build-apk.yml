@@ -23,7 +23,10 @@ jobs:
 
       - name: Extract Laugh & Chat project
         run: |
+          set -e
+
           mkdir -p extracted
+
           ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
@@ -31,19 +34,45 @@ jobs:
             exit 1
           fi
 
+          echo "Using ZIP: $ZIP_FILE"
+
           unzip -q "$ZIP_FILE" -d extracted
 
-          PROJECT_DIR=$(find extracted -name pubspec.yaml -print -quit | xargs dirname)
+          PROJECT_DIR=$(find extracted -type f -name pubspec.yaml -print -quit | xargs dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "pubspec.yaml was not found."
             exit 1
           fi
 
+          echo "Project directory: $PROJECT_DIR"
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verify project files
+        run: |
+          set -e
+
+          echo "Checking project files..."
+
+          test -f "$PROJECT_DIR/pubspec.yaml"
+          test -f "$PROJECT_DIR/lib/main.dart"
+
+          if [ ! -f "$PROJECT_DIR/assets/logo.png" ]; then
+            echo "ERROR: assets/logo.png is missing from the extracted project."
+            echo "Files inside project:"
+            find "$PROJECT_DIR" -maxdepth 3 -type f | sort
+            exit 1
+          fi
+
+          echo "✓ pubspec.yaml found"
+          echo "✓ lib/main.dart found"
+          echo "✓ assets/logo.png found"
 
       - name: Create complete Flutter Android project
         run: |
+          set -e
+
           flutter create \
             --platforms=android \
             --org com.humblet \
@@ -52,13 +81,37 @@ jobs:
 
       - name: Copy Laugh & Chat files
         run: |
-          cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
-          cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
+          set -e
 
+          cp "$PROJECT_DIR/lib/main.dart" \
+             build_app/lib/main.dart
+
+          cp "$PROJECT_DIR/pubspec.yaml" \
+             build_app/pubspec.yaml
+
+          # Copy the complete assets folder.
+          if [ -d "$PROJECT_DIR/assets" ]; then
+            cp -R "$PROJECT_DIR/assets" build_app/assets
+          else
+            echo "ERROR: assets folder not found."
+            exit 1
+          fi
+
+          # Copy Firebase configuration.
           mkdir -p build_app/android/app
 
-          cp "$PROJECT_DIR/android/app/google-services.json" \
-             build_app/android/app/google-services.json
+          if [ -f "$PROJECT_DIR/android/app/google-services.json" ]; then
+            cp "$PROJECT_DIR/android/app/google-services.json" \
+               build_app/android/app/google-services.json
+          else
+            echo "ERROR: google-services.json not found."
+            exit 1
+          fi
+
+          echo "Copied project files successfully."
+
+          echo "Checking logo:"
+          ls -lh build_app/assets/logo.png
 
       - name: Configure Firebase Google Services
         run: |
@@ -75,8 +128,15 @@ jobs:
               Path("build_app/android/app/build.gradle"),
           ]
 
-          settings = next((p for p in settings_candidates if p.exists()), None)
-          app = next((p for p in app_candidates if p.exists()), None)
+          settings = next(
+              (p for p in settings_candidates if p.exists()),
+              None
+          )
+
+          app = next(
+              (p for p in app_candidates if p.exists()),
+              None
+          )
 
           if settings is None:
               raise SystemExit(
@@ -92,6 +152,7 @@ jobs:
           app_text = app.read_text()
 
           if "com.google.gms.google-services" not in settings_text:
+
               if settings.suffix == ".kts":
                   plugin_line = (
                       '    id("com.google.gms.google-services") '
@@ -115,6 +176,7 @@ jobs:
               settings.write_text(settings_text)
 
           if "com.google.gms.google-services" not in app_text:
+
               if app.suffix == ".kts":
                   plugin_line = '    id("com.google.gms.google-services")'
               else:
@@ -132,8 +194,8 @@ jobs:
               app.write_text(app_text)
 
           print("Firebase configuration complete.")
-          print("Settings file:", settings)
-          print("App Gradle file:", app)
+          print("Settings:", settings)
+          print("App:", app)
           PY
 
       - name: Get dependencies
@@ -141,6 +203,16 @@ jobs:
         run: |
           flutter pub get
 
+      - name: Verify Flutter assets
+        working-directory: build_app
+        run: |
+          set -e
+
+          echo "Final asset check:"
+          test -f assets/logo.png
+          ls -lh assets/logo.png
+
+          echo "Asset verification passed."
 
       - name: Build APK
         working-directory: build_app
