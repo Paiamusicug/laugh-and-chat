@@ -78,7 +78,12 @@ jobs:
           cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
           cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
 
-          cp -R "$PROJECT_DIR/assets" build_app/assets
+          if [ -d "$PROJECT_DIR/assets" ]; then
+            cp -R "$PROJECT_DIR/assets" build_app/assets
+          else
+            echo "ERROR: assets folder not found."
+            exit 1
+          fi
 
           mkdir -p build_app/android/app
 
@@ -90,17 +95,7 @@ jobs:
             exit 1
           fi
 
-          if [ -f "$PROJECT_DIR/android/build.gradle" ]; then
-            cp "$PROJECT_DIR/android/build.gradle" \
-              build_app/android/build.gradle
-            echo "Corrected android/build.gradle copied."
-          else
-            echo "ERROR: android/build.gradle not found."
-            exit 1
-          fi
-
-          echo "Checking Android Gradle configuration:"
-          cat build_app/android/build.gradle
+          echo "Laugh & Chat files copied successfully."
 
       - name: Configure Firebase Google Services
         run: |
@@ -135,6 +130,9 @@ jobs:
               else:
                   plugin_line = '    id "com.google.gms.google-services" version "4.5.0" apply false'
 
+              if "plugins {" not in settings_text:
+                  raise SystemExit("No plugins block found in settings.gradle")
+
               settings_text = settings_text.replace(
                   "plugins {",
                   "plugins {\n" + plugin_line,
@@ -148,6 +146,9 @@ jobs:
                   plugin_line = '    id("com.google.gms.google-services")'
               else:
                   plugin_line = '    id "com.google.gms.google-services"'
+
+              if "plugins {" not in app_text:
+                  raise SystemExit("No plugins block found in app build.gradle")
 
               app_text = app_text.replace(
                   "plugins {",
@@ -165,11 +166,68 @@ jobs:
         run: |
           flutter pub get
 
+      - name: Fix gallery_saver_plus Android compileSdk
+        working-directory: build_app
+        run: |
+          set -e
+
+          echo "Searching for gallery_saver_plus Android module..."
+
+          GALLERY_DIR=$(find "$HOME/.pub-cache" \
+            -type d \
+            -path "*gallery_saver_plus-*/android" \
+            -print -quit)
+
+          if [ -z "$GALLERY_DIR" ]; then
+            echo "ERROR: gallery_saver_plus Android module was not found."
+            exit 1
+          fi
+
+          echo "Found gallery_saver_plus at:"
+          echo "$GALLERY_DIR"
+
+          python3 - "$GALLERY_DIR/build.gradle" <<'PY'
+          import sys
+          from pathlib import Path
+
+          gradle_file = Path(sys.argv[1])
+
+          if not gradle_file.exists():
+              raise SystemExit("gallery_saver_plus build.gradle not found.")
+
+          text = gradle_file.read_text()
+
+          original = text
+
+          text = text.replace(
+              "compileSdkVersion 31",
+              "compileSdkVersion 35"
+          )
+
+          text = text.replace(
+              "compileSdk 31",
+              "compileSdk 35"
+          )
+
+          if text == original:
+              print("No compileSdk 31 declaration found.")
+              print("Current gallery_saver_plus build.gradle:")
+              print(text)
+          else:
+              gradle_file.write_text(text)
+              print("gallery_saver_plus compileSdk changed to 35.")
+          PY
+
+          echo "Final gallery_saver_plus Gradle file:"
+          cat "$GALLERY_DIR/build.gradle"
+
       - name: Verify Flutter assets
         working-directory: build_app
         run: |
           set -e
+
           test -f assets/logo.png
+
           echo "Asset verification passed."
 
       - name: Build APK
