@@ -1,3 +1,76 @@
+name: Build Laugh & Chat APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+
+      - name: Extract Laugh & Chat project
+        run: |
+          set -e
+          mkdir -p extracted
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" -print -quit)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No Laugh & Chat ZIP file found."
+            exit 1
+          fi
+
+          echo "Using ZIP: $ZIP_FILE"
+
+          unzip -q "$ZIP_FILE" -d extracted
+
+          PROJECT_DIR=$(find extracted -type f -name pubspec.yaml -print -quit | xargs dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "pubspec.yaml was not found."
+            exit 1
+          fi
+
+          echo "Project directory: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verify project files
+        run: |
+          set -e
+
+          test -f "$PROJECT_DIR/pubspec.yaml"
+          test -f "$PROJECT_DIR/lib/main.dart"
+
+          if [ ! -f "$PROJECT_DIR/assets/logo.png" ]; then
+            echo "ERROR: assets/logo.png is missing."
+            exit 1
+          fi
+
+          echo "Project files verified."
+
+      - name: Create complete Flutter Android project
+        run: |
+          set -e
+
+          flutter create \
+            --platforms=android \
+            --org com.humblet \
+            --project-name laughandchat \
+            build_app
+
       - name: Copy Laugh & Chat files
         run: |
           set -e
@@ -5,35 +78,107 @@
           cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
           cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
 
-          if [ -d "$PROJECT_DIR/assets" ]; then
-            cp -R "$PROJECT_DIR/assets" build_app/assets
-          else
-            echo "ERROR: assets folder not found."
-            exit 1
-          fi
+          cp -R "$PROJECT_DIR/assets" build_app/assets
 
           mkdir -p build_app/android/app
 
           if [ -f "$PROJECT_DIR/android/app/google-services.json" ]; then
             cp "$PROJECT_DIR/android/app/google-services.json" \
-               build_app/android/app/google-services.json
+              build_app/android/app/google-services.json
           else
             echo "ERROR: google-services.json not found."
             exit 1
           fi
 
-          # IMPORTANT: copy corrected Android Gradle configuration
           if [ -f "$PROJECT_DIR/android/build.gradle" ]; then
             cp "$PROJECT_DIR/android/build.gradle" \
-               build_app/android/build.gradle
-            echo "✓ Corrected android/build.gradle copied"
+              build_app/android/build.gradle
+            echo "Corrected android/build.gradle copied."
           else
-            echo "ERROR: corrected android/build.gradle not found."
+            echo "ERROR: android/build.gradle not found."
             exit 1
           fi
 
-          echo "Checking logo:"
-          ls -lh build_app/assets/logo.png
-
           echo "Checking Android Gradle configuration:"
           cat build_app/android/build.gradle
+
+      - name: Configure Firebase Google Services
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          settings_candidates = [
+              Path("build_app/android/settings.gradle.kts"),
+              Path("build_app/android/settings.gradle"),
+          ]
+
+          app_candidates = [
+              Path("build_app/android/app/build.gradle.kts"),
+              Path("build_app/android/app/build.gradle"),
+          ]
+
+          settings = next((p for p in settings_candidates if p.exists()), None)
+          app = next((p for p in app_candidates if p.exists()), None)
+
+          if settings is None:
+              raise SystemExit("Could not find settings.gradle")
+
+          if app is None:
+              raise SystemExit("Could not find app/build.gradle")
+
+          settings_text = settings.read_text()
+          app_text = app.read_text()
+
+          if "com.google.gms.google-services" not in settings_text:
+              if settings.suffix == ".kts":
+                  plugin_line = '    id("com.google.gms.google-services") version "4.5.0" apply false'
+              else:
+                  plugin_line = '    id "com.google.gms.google-services" version "4.5.0" apply false'
+
+              settings_text = settings_text.replace(
+                  "plugins {",
+                  "plugins {\n" + plugin_line,
+                  1
+              )
+
+              settings.write_text(settings_text)
+
+          if "com.google.gms.google-services" not in app_text:
+              if app.suffix == ".kts":
+                  plugin_line = '    id("com.google.gms.google-services")'
+              else:
+                  plugin_line = '    id "com.google.gms.google-services"'
+
+              app_text = app_text.replace(
+                  "plugins {",
+                  "plugins {\n" + plugin_line,
+                  1
+              )
+
+              app.write_text(app_text)
+
+          print("Firebase configuration complete.")
+          PY
+
+      - name: Get dependencies
+        working-directory: build_app
+        run: |
+          flutter pub get
+
+      - name: Verify Flutter assets
+        working-directory: build_app
+        run: |
+          set -e
+          test -f assets/logo.png
+          echo "Asset verification passed."
+
+      - name: Build APK
+        working-directory: build_app
+        run: |
+          flutter build apk --debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: laugh-and-chat-apk
+          path: build_app/build/app/outputs/flutter-apk/app-debug.apk
