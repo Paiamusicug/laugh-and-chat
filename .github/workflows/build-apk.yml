@@ -21,47 +21,43 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Extract Laugh & Chat project
+      - name: Extract Laugh & Chat v2.2.0
         run: |
           set -e
           mkdir -p extracted
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" -print -quit)
+          ZIP_FILE="./Laugh_and_Chat_v2_2_0_FIXED.zip"
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "No Laugh & Chat ZIP file found."
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: Laugh_and_Chat_v2_2_0_FIXED.zip was not found."
             exit 1
           fi
 
-          echo "Using ZIP: $ZIP_FILE"
+          echo "Using: $ZIP_FILE"
 
           unzip -q "$ZIP_FILE" -d extracted
 
           PROJECT_DIR=$(find extracted -type f -name pubspec.yaml -print -quit | xargs dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "pubspec.yaml was not found."
+            echo "ERROR: pubspec.yaml was not found."
             exit 1
           fi
 
           echo "Project directory: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Verify project files
+      - name: Verify project
         run: |
           set -e
 
           test -f "$PROJECT_DIR/pubspec.yaml"
           test -f "$PROJECT_DIR/lib/main.dart"
+          test -f "$PROJECT_DIR/assets/logo.png"
 
-          if [ ! -f "$PROJECT_DIR/assets/logo.png" ]; then
-            echo "ERROR: assets/logo.png is missing."
-            exit 1
-          fi
+          echo "Laugh & Chat v2.2.0 project verified."
 
-          echo "Project files verified."
-
-      - name: Create complete Flutter Android project
+      - name: Create Android project
         run: |
           set -e
 
@@ -71,155 +67,22 @@ jobs:
             --project-name laughandchat \
             build_app
 
-      - name: Copy Laugh & Chat files
+      - name: Copy Laugh & Chat source
         run: |
           set -e
 
           cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
           cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
 
-          if [ -d "$PROJECT_DIR/assets" ]; then
-            cp -R "$PROJECT_DIR/assets" build_app/assets
-          else
-            echo "ERROR: assets folder not found."
-            exit 1
-          fi
+          rm -rf build_app/assets
+          cp -R "$PROJECT_DIR/assets" build_app/assets
 
-          mkdir -p build_app/android/app
-
-          if [ -f "$PROJECT_DIR/android/app/google-services.json" ]; then
-            cp "$PROJECT_DIR/android/app/google-services.json" \
-              build_app/android/app/google-services.json
-          else
-            echo "ERROR: google-services.json not found."
-            exit 1
-          fi
-
-          echo "Laugh & Chat files copied successfully."
-
-      - name: Configure Firebase Google Services
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          settings_candidates = [
-              Path("build_app/android/settings.gradle.kts"),
-              Path("build_app/android/settings.gradle"),
-          ]
-
-          app_candidates = [
-              Path("build_app/android/app/build.gradle.kts"),
-              Path("build_app/android/app/build.gradle"),
-          ]
-
-          settings = next((p for p in settings_candidates if p.exists()), None)
-          app = next((p for p in app_candidates if p.exists()), None)
-
-          if settings is None:
-              raise SystemExit("Could not find settings.gradle")
-
-          if app is None:
-              raise SystemExit("Could not find app/build.gradle")
-
-          settings_text = settings.read_text()
-          app_text = app.read_text()
-
-          if "com.google.gms.google-services" not in settings_text:
-              if settings.suffix == ".kts":
-                  plugin_line = '    id("com.google.gms.google-services") version "4.5.0" apply false'
-              else:
-                  plugin_line = '    id "com.google.gms.google-services" version "4.5.0" apply false'
-
-              if "plugins {" not in settings_text:
-                  raise SystemExit("No plugins block found in settings.gradle")
-
-              settings_text = settings_text.replace(
-                  "plugins {",
-                  "plugins {\n" + plugin_line,
-                  1
-              )
-
-              settings.write_text(settings_text)
-
-          if "com.google.gms.google-services" not in app_text:
-              if app.suffix == ".kts":
-                  plugin_line = '    id("com.google.gms.google-services")'
-              else:
-                  plugin_line = '    id "com.google.gms.google-services"'
-
-              if "plugins {" not in app_text:
-                  raise SystemExit("No plugins block found in app build.gradle")
-
-              app_text = app_text.replace(
-                  "plugins {",
-                  "plugins {\n" + plugin_line,
-                  1
-              )
-
-              app.write_text(app_text)
-
-          print("Firebase configuration complete.")
-          PY
+          echo "Source copied successfully."
 
       - name: Get dependencies
         working-directory: build_app
         run: |
           flutter pub get
-
-      - name: Fix gallery_saver_plus Android compileSdk
-        working-directory: build_app
-        run: |
-          set -e
-
-          echo "Searching for gallery_saver_plus Android module..."
-
-          GALLERY_DIR=$(find "$HOME/.pub-cache" \
-            -type d \
-            -path "*gallery_saver_plus-*/android" \
-            -print -quit)
-
-          if [ -z "$GALLERY_DIR" ]; then
-            echo "ERROR: gallery_saver_plus Android module was not found."
-            exit 1
-          fi
-
-          echo "Found gallery_saver_plus at:"
-          echo "$GALLERY_DIR"
-
-          python3 - "$GALLERY_DIR/build.gradle" <<'PY'
-          import sys
-          from pathlib import Path
-
-          gradle_file = Path(sys.argv[1])
-
-          if not gradle_file.exists():
-              raise SystemExit("gallery_saver_plus build.gradle not found.")
-
-          text = gradle_file.read_text()
-
-          original = text
-
-          text = text.replace(
-              "compileSdkVersion 31",
-              "compileSdkVersion 35"
-          )
-
-          text = text.replace(
-              "compileSdk 31",
-              "compileSdk 35"
-          )
-
-          if text == original:
-              print("No compileSdk 31 declaration found.")
-              print("Current gallery_saver_plus build.gradle:")
-              print(text)
-          else:
-              gradle_file.write_text(text)
-              print("gallery_saver_plus compileSdk changed to 35.")
-          PY
-
-          echo "Final gallery_saver_plus Gradle file:"
-          cat "$GALLERY_DIR/build.gradle"
 
       - name: Verify Flutter assets
         working-directory: build_app
@@ -228,7 +91,7 @@ jobs:
 
           test -f assets/logo.png
 
-          echo "Asset verification passed."
+          echo "Logo verification passed."
 
       - name: Build APK
         working-directory: build_app
