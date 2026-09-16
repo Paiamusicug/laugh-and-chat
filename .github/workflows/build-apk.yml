@@ -1,4 +1,4 @@
-name: Build Laugh & Chat APK
+name: Build Laugh & Chat Supabase APK
 
 on:
   workflow_dispatch:
@@ -21,23 +21,24 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Extract Laugh & Chat v2.2.0
+      - name: Extract Supabase project
         run: |
           set -e
+
           mkdir -p extracted
 
-          ZIP_FILE="./Laugh_and_Chat_v2_2_0_FIXED.zip"
+          ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_0.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Laugh_and_Chat_v2_2_0_FIXED.zip was not found."
+            echo "ERROR: Supabase v3.0.0 ZIP was not found."
             exit 1
           fi
 
-          echo "Using: $ZIP_FILE"
+          echo "Using ZIP: $ZIP_FILE"
 
           unzip -q "$ZIP_FILE" -d extracted
 
-          PROJECT_DIR=$(find extracted -type f -name pubspec.yaml -print -quit | xargs dirname)
+          PROJECT_DIR=$(find extracted -type f -name "pubspec.yaml" -print -quit | xargs dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "ERROR: pubspec.yaml was not found."
@@ -47,15 +48,16 @@ jobs:
           echo "Project directory: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Verify project
+      - name: Verify Supabase project
         run: |
           set -e
 
           test -f "$PROJECT_DIR/pubspec.yaml"
           test -f "$PROJECT_DIR/lib/main.dart"
+          test -f "$PROJECT_DIR/lib/supabase_config.dart"
           test -f "$PROJECT_DIR/assets/logo.png"
 
-          echo "Laugh & Chat v2.2.0 project verified."
+          echo "Supabase project files verified."
 
       - name: Create Android project
         run: |
@@ -67,17 +69,17 @@ jobs:
             --project-name laughandchat \
             build_app
 
-      - name: Copy Laugh & Chat source
+      - name: Copy Supabase app files
         run: |
           set -e
 
           cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
+          cp "$PROJECT_DIR/lib/supabase_config.dart" build_app/lib/supabase_config.dart
           cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
 
-          rm -rf build_app/assets
           cp -R "$PROJECT_DIR/assets" build_app/assets
 
-          echo "Source copied successfully."
+          echo "Supabase app files copied successfully."
 
       - name: Get dependencies
         working-directory: build_app
@@ -91,7 +93,7 @@ jobs:
 
           test -f assets/logo.png
 
-          echo "Logo verification passed."
+          echo "Asset verification passed."
 
       - name: Build APK
         working-directory: build_app
@@ -101,5 +103,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: laugh-and-chat-apk
+          name: laugh-and-chat-supabase-v3
           path: build_app/build/app/outputs/flutter-apk/app-debug.apk
