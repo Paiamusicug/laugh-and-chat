@@ -21,16 +21,16 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Extract Supabase project
+      - name: Extract Supabase v3.0.1 project
         run: |
           set -e
 
           mkdir -p extracted
 
-          ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_0.zip"
+          ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_1_FIXED.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Supabase v3.0.0 ZIP was not found."
+            echo "ERROR: Supabase v3.0.1 FIXED ZIP was not found."
             exit 1
           fi
 
@@ -57,7 +57,7 @@ jobs:
           test -f "$PROJECT_DIR/lib/supabase_config.dart"
           test -f "$PROJECT_DIR/assets/logo.png"
 
-          echo "Supabase project files verified."
+          echo "Supabase v3.0.1 project files verified."
 
       - name: Create Android project
         run: |
@@ -79,11 +79,12 @@ jobs:
 
           cp -R "$PROJECT_DIR/assets" build_app/assets
 
-          echo "Supabase app files copied successfully."
+          echo "Supabase v3.0.1 app files copied successfully."
 
       - name: Get dependencies
         working-directory: build_app
         run: |
+          set -e
           flutter pub get
 
       - name: Verify Flutter assets
@@ -98,10 +99,11 @@ jobs:
       - name: Build APK
         working-directory: build_app
         run: |
+          set -e
           flutter build apk --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: laugh-and-chat-supabase-v3
+          name: laugh-and-chat-supabase-v3-0-1
           path: build_app/build/app/outputs/flutter-apk/app-debug.apk
