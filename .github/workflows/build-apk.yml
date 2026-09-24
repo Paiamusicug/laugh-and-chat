@@ -27,10 +27,9 @@ jobs:
 
           mkdir -p extracted
 
-          ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_1_CORRECTED.zip"
-
+          ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_1_BUILD_READY.zip"
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Supabase v3.0.1 FIXED ZIP was not found."
+            echo "ERROR: Supabase v3.0.1 BUILD_READY ZIP was not found."
             exit 1
           fi
 
