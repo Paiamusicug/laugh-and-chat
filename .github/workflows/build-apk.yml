@@ -30,6 +30,7 @@ jobs:
       - name: Extract Supabase v3.0.3 project
         run: |
           set -e
+
           mkdir -p extracted
 
           ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_3_DEPENDENCIES_STABLE.zip"
@@ -40,6 +41,7 @@ jobs:
           fi
 
           echo "Using ZIP: $ZIP_FILE"
+
           unzip -q "$ZIP_FILE" -d extracted
 
           PROJECT_DIR=$(find extracted -type f -name "pubspec.yaml" -print -quit | xargs dirname)
@@ -98,12 +100,14 @@ jobs:
 
           text = settings.read_text()
 
+          # Android Gradle Plugin
           text = re.sub(
               r'(com\.android\.application["\']?\s+version\s+["\'])[^"\']+(["\'])',
               r'\g<1>8.12.1\g<2>',
               text
           )
 
+          # Kotlin
           text = re.sub(
               r'(org\.jetbrains\.kotlin\.android["\']?\s+version\s+["\'])[^"\']+(["\'])',
               r'\g<1>2.2.0\g<2>',
@@ -112,6 +116,7 @@ jobs:
 
           settings.write_text(text)
 
+          # Gradle 9.3.1
           wrapper = Path("android/gradle/wrapper/gradle-wrapper.properties")
 
           if wrapper.exists():
@@ -125,8 +130,52 @@ jobs:
 
               wrapper.write_text(text)
 
-              print("Gradle wrapper configured for Gradle 9.3.1.")
+          # Force Android compile/target SDK 36.
+          build_files = [
+              Path("android/app/build.gradle.kts"),
+              Path("android/app/build.gradle")
+          ]
 
+          app_build = next((p for p in build_files if p.exists()), None)
+
+          if app_build is None:
+              raise SystemExit(
+                  "ERROR: Android app build.gradle.kts/build.gradle was not found."
+              )
+
+          print(f"Using Android app build file: {app_build}")
+
+          text = app_build.read_text()
+
+          # Kotlin DSL
+          text = re.sub(
+              r'compileSdk\s*=\s*flutter\.compileSdkVersion',
+              'compileSdk = 36',
+              text
+          )
+
+          text = re.sub(
+              r'targetSdk\s*=\s*flutter\.targetSdkVersion',
+              'targetSdk = 36',
+              text
+          )
+
+          # Groovy DSL fallback
+          text = re.sub(
+              r'compileSdk\s+flutter\.compileSdkVersion',
+              'compileSdk 36',
+              text
+          )
+
+          text = re.sub(
+              r'targetSdk\s+flutter\.targetSdkVersion',
+              'targetSdk 36',
+              text
+          )
+
+          app_build.write_text(text)
+
+          print("Android compileSdk/targetSdk set to 36.")
           print("Android build configuration completed.")
           PY
 
@@ -147,14 +196,17 @@ jobs:
           set -e
           flutter pub get
 
-      - name: Verify Flutter assets
+      - name: Verify Android SDK configuration
         working-directory: build_app
         run: |
           set -e
 
+          grep -n "compileSdk" android/app/build.gradle.kts || true
+          grep -n "targetSdk" android/app/build.gradle.kts || true
+
           test -f assets/logo.png
 
-          echo "Asset verification passed."
+          echo "Android SDK and Flutter assets verified."
 
       - name: Build APK
         working-directory: build_app
