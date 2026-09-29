@@ -30,7 +30,6 @@ jobs:
       - name: Extract Supabase v3.0.3 project
         run: |
           set -e
-
           mkdir -p extracted
 
           ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_3_DEPENDENCIES_STABLE.zip"
@@ -41,7 +40,6 @@ jobs:
           fi
 
           echo "Using ZIP: $ZIP_FILE"
-
           unzip -q "$ZIP_FILE" -d extracted
 
           PROJECT_DIR=$(find extracted -type f -name "pubspec.yaml" -print -quit | xargs dirname)
@@ -84,7 +82,6 @@ jobs:
           from pathlib import Path
           import re
 
-          # Support both modern .kts and older .gradle Flutter projects.
           settings_files = [
               Path("android/settings.gradle.kts"),
               Path("android/settings.gradle")
@@ -93,20 +90,20 @@ jobs:
           settings = next((p for p in settings_files if p.exists()), None)
 
           if settings is None:
-              raise SystemExit("ERROR: Neither settings.gradle.kts nor settings.gradle was found.")
+              raise SystemExit(
+                  "ERROR: Neither settings.gradle.kts nor settings.gradle was found."
+              )
 
           print(f"Using Android settings file: {settings}")
 
           text = settings.read_text()
 
-          # Upgrade Android Gradle Plugin to a version compatible with share_plus 13.x.
           text = re.sub(
               r'(com\.android\.application["\']?\s+version\s+["\'])[^"\']+(["\'])',
               r'\g<1>8.12.1\g<2>',
               text
           )
 
-          # Upgrade Kotlin plugin.
           text = re.sub(
               r'(org\.jetbrains\.kotlin\.android["\']?\s+version\s+["\'])[^"\']+(["\'])',
               r'\g<1>2.2.0\g<2>',
@@ -115,18 +112,20 @@ jobs:
 
           settings.write_text(text)
 
-          # Configure Gradle wrapper.
           wrapper = Path("android/gradle/wrapper/gradle-wrapper.properties")
 
           if wrapper.exists():
               text = wrapper.read_text()
+
               text = re.sub(
                   r'gradle-[0-9.]+-(bin|all)\.zip',
-                  r'gradle-8.13-\1.zip',
+                  r'gradle-9.3.1-\1.zip',
                   text
               )
+
               wrapper.write_text(text)
-              print("Gradle wrapper configured for Gradle 8.13.")
+
+              print("Gradle wrapper configured for Gradle 9.3.1.")
 
           print("Android build configuration completed.")
           PY
@@ -138,7 +137,6 @@ jobs:
           cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
           cp "$PROJECT_DIR/lib/supabase_config.dart" build_app/lib/supabase_config.dart
           cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
-
           cp -R "$PROJECT_DIR/assets" build_app/assets
 
           echo "Supabase v3.0.3 app files copied successfully."
