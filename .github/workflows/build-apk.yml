@@ -82,42 +82,54 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          settings = Path("android/settings.gradle")
+          # Support both modern .kts and older .gradle Flutter projects.
+          settings_files = [
+              Path("android/settings.gradle.kts"),
+              Path("android/settings.gradle")
+          ]
+
+          settings = next((p for p in settings_files if p.exists()), None)
+
+          if settings is None:
+              raise SystemExit("ERROR: Neither settings.gradle.kts nor settings.gradle was found.")
+
+          print(f"Using Android settings file: {settings}")
+
           text = settings.read_text()
 
-          text = text.replace(
-              'id "com.android.application" version "8.11.1" apply false',
-              'id "com.android.application" version "8.12.1" apply false'
+          # Upgrade Android Gradle Plugin to a version compatible with share_plus 13.x.
+          text = re.sub(
+              r'(com\.android\.application["\']?\s+version\s+["\'])[^"\']+(["\'])',
+              r'\g<1>8.12.1\g<2>',
+              text
           )
 
-          text = text.replace(
-              'id "org.jetbrains.kotlin.android" version "2.2.20" apply false',
-              'id "org.jetbrains.kotlin.android" version "2.2.0" apply false'
+          # Upgrade Kotlin plugin.
+          text = re.sub(
+              r'(org\.jetbrains\.kotlin\.android["\']?\s+version\s+["\'])[^"\']+(["\'])',
+              r'\g<1>2.2.0\g<2>',
+              text
           )
 
           settings.write_text(text)
 
+          # Configure Gradle wrapper.
           wrapper = Path("android/gradle/wrapper/gradle-wrapper.properties")
-          text = wrapper.read_text()
-          text = text.replace(
-              "gradle-8.12.1-bin.zip",
-              "gradle-8.13-bin.zip"
-          )
-          text = text.replace(
-              "gradle-8.12.1-all.zip",
-              "gradle-8.13-all.zip"
-          )
-          wrapper.write_text(text)
 
-          gradle_properties = Path("android/gradle.properties")
-          text = gradle_properties.read_text()
-          if "android.builtInKotlin=true" not in text:
-              text += "\nandroid.builtInKotlin=false\n"
-          gradle_properties.write_text(text)
+          if wrapper.exists():
+              text = wrapper.read_text()
+              text = re.sub(
+                  r'gradle-[0-9.]+-(bin|all)\.zip',
+                  r'gradle-8.13-\1.zip',
+                  text
+              )
+              wrapper.write_text(text)
+              print("Gradle wrapper configured for Gradle 8.13.")
+
+          print("Android build configuration completed.")
           PY
-
-          echo "Android build configuration updated."
 
       - name: Copy Supabase app files
         run: |
@@ -126,6 +138,7 @@ jobs:
           cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
           cp "$PROJECT_DIR/lib/supabase_config.dart" build_app/lib/supabase_config.dart
           cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
+
           cp -R "$PROJECT_DIR/assets" build_app/assets
 
           echo "Supabase v3.0.3 app files copied successfully."
@@ -140,7 +153,9 @@ jobs:
         working-directory: build_app
         run: |
           set -e
+
           test -f assets/logo.png
+
           echo "Asset verification passed."
 
       - name: Build APK
