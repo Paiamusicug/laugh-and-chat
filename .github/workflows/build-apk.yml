@@ -89,10 +89,6 @@ jobs:
           from pathlib import Path
           import re
 
-          # ============================================================
-          # SETTINGS / PLUGINS
-          # ============================================================
-
           settings_candidates = [
               Path("android/settings.gradle.kts"),
               Path("android/settings.gradle")
@@ -110,14 +106,12 @@ jobs:
 
           text = settings.read_text()
 
-          # Android Gradle Plugin 8.12.1
           text = re.sub(
               r'(com\.android\.application["\']?\s+version\s+["\'])[^"\']+(["\'])',
               r'\g<1>8.12.1\g<2>',
               text
           )
 
-          # Kotlin 2.2.0
           text = re.sub(
               r'(org\.jetbrains\.kotlin\.android["\']?\s+version\s+["\'])[^"\']+(["\'])',
               r'\g<1>2.2.0\g<2>',
@@ -127,10 +121,6 @@ jobs:
           settings.write_text(text)
 
           print(f"Configured: {settings}")
-
-          # ============================================================
-          # GRADLE WRAPPER
-          # ============================================================
 
           wrapper = Path(
               "android/gradle/wrapper/gradle-wrapper.properties"
@@ -149,10 +139,6 @@ jobs:
 
               print("Gradle wrapper configured for 9.3.1.")
 
-          # ============================================================
-          # MAIN APP SDK
-          # ============================================================
-
           app_candidates = [
               Path("android/app/build.gradle.kts"),
               Path("android/app/build.gradle")
@@ -170,7 +156,6 @@ jobs:
 
           text = app.read_text()
 
-          # Flutter compileSdk -> 36
           text = re.sub(
               r'compileSdk\s*=\s*flutter\.compileSdkVersion',
               'compileSdk = 36',
@@ -183,7 +168,6 @@ jobs:
               text
           )
 
-          # Explicit old compile SDK values
           text = re.sub(
               r'compileSdk\s*=\s*31\b',
               'compileSdk = 36',
@@ -202,7 +186,6 @@ jobs:
               text
           )
 
-          # Flutter targetSdk -> 36
           text = re.sub(
               r'targetSdk\s*=\s*flutter\.targetSdkVersion',
               'targetSdk = 36',
@@ -240,16 +223,18 @@ jobs:
           PY
 
       - name: Copy Supabase source
+        env:
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
           set -e
 
           cp "$PROJECT_DIR/lib/main.dart" \
              build_app/lib/main.dart
 
-          cat > build_app/lib/supabase_config.dart <<EOF
-const String supabaseUrl = 'https://knedortbcjaaprmwuqqg.supabase.co';
-const String supabasePublishableKey = '${{ secrets.SUPABASE_PUBLISHABLE_KEY }}';
-EOF
+          printf '%s\n' \
+            "const String supabaseUrl = 'https://knedortbcjaaprmwuqqg.supabase.co';" \
+            "const String supabasePublishableKey = '$SUPABASE_PUBLISHABLE_KEY';" \
+            > build_app/lib/supabase_config.dart
 
           cp "$PROJECT_DIR/pubspec.yaml" \
              build_app/pubspec.yaml
@@ -260,6 +245,15 @@ EOF
              build_app/assets
 
           echo "Supabase source copied."
+
+      - name: Verify Supabase key
+        working-directory: build_app
+        run: |
+          set -e
+
+          grep -q "sb_publishable_" lib/supabase_config.dart
+
+          echo "PASS: Supabase publishable key configured."
 
       - name: Fix FilePicker API
         working-directory: build_app
@@ -272,9 +266,6 @@ EOF
           path = Path("lib/main.dart")
 
           text = path.read_text()
-
-          # file_picker 12.x uses FilePicker.pickFiles()
-          # instead of FilePicker.platform.pickFiles()
 
           text = text.replace(
               "FilePicker.platform.pickFiles(",
@@ -324,10 +315,6 @@ EOF
           from pathlib import Path
           import re
 
-          # ============================================================
-          # FORCE MAIN APP SDK 36
-          # ============================================================
-
           app_candidates = [
               Path("android/app/build.gradle.kts"),
               Path("android/app/build.gradle")
@@ -345,7 +332,6 @@ EOF
 
           text = app.read_text()
 
-          # compileSdk
           text = re.sub(
               r'compileSdk\s*=\s*flutter\.compileSdkVersion',
               'compileSdk = 36',
@@ -376,7 +362,6 @@ EOF
               text
           )
 
-          # targetSdk
           text = re.sub(
               r'targetSdk\s*=\s*flutter\.targetSdkVersion',
               'targetSdk = 36',
@@ -411,10 +396,6 @@ EOF
 
           print("Main Android application forced to SDK 36.")
 
-          # ============================================================
-          # PATCH GALLERY_SAVER_PLUS
-          # ============================================================
-
           pub_cache = Path.home() / ".pub-cache"
 
           gallery_dirs = list(
@@ -428,11 +409,10 @@ EOF
                   "ERROR: gallery_saver_plus Android directory not found."
               )
 
-          print("======================================")
           print("gallery_saver_plus directories found:")
+
           for directory in gallery_dirs:
               print(directory)
-          print("======================================")
 
           for android_dir in gallery_dirs:
 
@@ -448,23 +428,11 @@ EOF
 
                   text = path.read_text()
 
-                  # ----------------------------------------------------
-                  # OLD GRADLE:
-                  # compileSdkVersion 31
-                  # compileSdkVersion = 31
-                  # ----------------------------------------------------
-
                   text = re.sub(
                       r'\bcompileSdkVersion\s*=?\s*31\b',
                       'compileSdkVersion 36',
                       text
                   )
-
-                  # ----------------------------------------------------
-                  # MODERN GRADLE:
-                  # compileSdk = 31
-                  # compileSdk 31
-                  # ----------------------------------------------------
 
                   text = re.sub(
                       r'\bcompileSdk\s*=\s*31\b',
@@ -477,10 +445,6 @@ EOF
                       'compileSdk 36',
                       text
                   )
-
-                  # ----------------------------------------------------
-                  # FLUTTER SDK REFERENCES
-                  # ----------------------------------------------------
 
                   text = re.sub(
                       r'\bcompileSdkVersion\s+flutter\.compileSdkVersion\b',
@@ -514,6 +478,15 @@ EOF
         working-directory: build_app
         run: |
           set -e
+
+          echo ""
+          echo "======================================"
+          echo "SUPABASE CONFIG CHECK"
+          echo "======================================"
+
+          grep -q "sb_publishable_" lib/supabase_config.dart
+
+          echo "PASS: Supabase publishable key exists."
 
           echo ""
           echo "======================================"
@@ -555,8 +528,6 @@ EOF
             echo "ERROR: gallery_saver_plus Gradle file not found."
             exit 1
           fi
-
-          echo "$GALLERY_FILES"
 
           echo "$GALLERY_FILES" | while read -r FILE; do
             echo "---- $FILE ----"
