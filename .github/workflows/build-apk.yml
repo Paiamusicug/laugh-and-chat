@@ -35,26 +35,21 @@ jobs:
 
           ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_3_DEPENDENCIES_STABLE.zip"
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: Supabase v3.0.3 ZIP was not found."
-            exit 1
-          fi
-
-          echo "Using ZIP: $ZIP_FILE"
+          test -f "$ZIP_FILE"
 
           unzip -q "$ZIP_FILE" -d extracted
 
           PROJECT_DIR=$(find extracted -type f -name "pubspec.yaml" -print -quit | xargs dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: pubspec.yaml was not found."
+            echo "ERROR: pubspec.yaml not found."
             exit 1
           fi
 
-          echo "Project directory: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Using project: $PROJECT_DIR"
 
-      - name: Verify Supabase project
+      - name: Verify project files
         run: |
           set -e
 
@@ -62,8 +57,6 @@ jobs:
           test -f "$PROJECT_DIR/lib/main.dart"
           test -f "$PROJECT_DIR/lib/supabase_config.dart"
           test -f "$PROJECT_DIR/assets/logo.png"
-
-          echo "Supabase project files verified."
 
       - name: Create Android project
         run: |
@@ -75,7 +68,7 @@ jobs:
             --project-name laughandchat \
             build_app
 
-      - name: Configure Android build
+      - name: Configure Android project
         working-directory: build_app
         run: |
           set -e
@@ -85,33 +78,30 @@ jobs:
           import re
 
           # -----------------------------
-          # Android settings
+          # settings.gradle / settings.gradle.kts
           # -----------------------------
 
-          settings_files = [
+          settings_candidates = [
               Path("android/settings.gradle.kts"),
               Path("android/settings.gradle")
           ]
 
-          settings = next((p for p in settings_files if p.exists()), None)
+          settings = next(
+              (p for p in settings_candidates if p.exists()),
+              None
+          )
 
           if settings is None:
-              raise SystemExit(
-                  "ERROR: Android settings.gradle.kts/settings.gradle not found."
-              )
-
-          print(f"Using settings file: {settings}")
+              raise SystemExit("ERROR: Android settings file not found.")
 
           text = settings.read_text()
 
-          # Android Gradle Plugin
           text = re.sub(
               r'(com\.android\.application["\']?\s+version\s+["\'])[^"\']+(["\'])',
               r'\g<1>8.12.1\g<2>',
               text
           )
 
-          # Kotlin
           text = re.sub(
               r'(org\.jetbrains\.kotlin\.android["\']?\s+version\s+["\'])[^"\']+(["\'])',
               r'\g<1>2.2.0\g<2>',
@@ -140,26 +130,24 @@ jobs:
               wrapper.write_text(text)
 
           # -----------------------------
-          # App compileSdk / targetSdk
+          # Main app compileSdk
           # -----------------------------
 
-          build_files = [
+          app_candidates = [
               Path("android/app/build.gradle.kts"),
               Path("android/app/build.gradle")
           ]
 
-          app_build = next((p for p in build_files if p.exists()), None)
+          app = next(
+              (p for p in app_candidates if p.exists()),
+              None
+          )
 
-          if app_build is None:
-              raise SystemExit(
-                  "ERROR: Android app build.gradle.kts/build.gradle not found."
-              )
+          if app is None:
+              raise SystemExit("ERROR: Android app build file not found.")
 
-          print(f"Using app build file: {app_build}")
+          text = app.read_text()
 
-          text = app_build.read_text()
-
-          # Kotlin DSL
           text = re.sub(
               r'compileSdk\s*=\s*flutter\.compileSdkVersion',
               'compileSdk = 36',
@@ -172,20 +160,6 @@ jobs:
               text
           )
 
-          # Groovy fallback
-          text = re.sub(
-              r'compileSdk\s+flutter\.compileSdkVersion',
-              'compileSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdk\s+flutter\.targetSdkVersion',
-              'targetSdk 36',
-              text
-          )
-
-          # If compileSdk still uses 31, replace it.
           text = re.sub(
               r'compileSdk\s*=\s*31',
               'compileSdk = 36',
@@ -210,14 +184,13 @@ jobs:
               text
           )
 
-          app_build.write_text(text)
+          app.write_text(text)
 
-          print("Main Android app configured for compileSdk 36.")
-          print("Main Android app configured for targetSdk 36.")
+          print("Main app configured for compileSdk 36.")
 
           PY
 
-      - name: Copy Supabase app files
+      - name: Copy Supabase source
         run: |
           set -e
 
@@ -228,7 +201,39 @@ jobs:
           rm -rf build_app/assets
           cp -R "$PROJECT_DIR/assets" build_app/assets
 
-          echo "Supabase app files copied."
+      - name: FIX FilePicker API
+        working-directory: build_app
+        run: |
+          set -e
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("lib/main.dart")
+          text = path.read_text()
+
+          # file_picker 12.x removed FilePicker.platform.
+          text = text.replace(
+              "FilePicker.platform.pickFiles(",
+              "FilePicker.pickFiles("
+          )
+
+          path.write_text(text)
+
+          remaining = text.count("FilePicker.platform")
+
+          print("FilePicker API updated.")
+
+          if remaining:
+              print(
+                  f"WARNING: {remaining} FilePicker.platform references remain."
+              )
+          else:
+              print("No FilePicker.platform references remain.")
+
+          PY
+
+          grep -n "FilePicker" lib/main.dart || true
 
       - name: Get dependencies
         working-directory: build_app
@@ -237,151 +242,138 @@ jobs:
 
           flutter pub get
 
-      - name: FIX gallery_saver_plus compileSdk
+      - name: FIX gallery_saver_plus Android compileSdk
         working-directory: build_app
         run: |
           set -e
 
-          echo "Searching for gallery_saver_plus..."
+          echo "Searching pub cache for gallery_saver_plus..."
 
-          FOUND=0
+          GALLERY_DIRS=$(find "$HOME/.pub-cache" \
+            -type d \
+            -name "gallery_saver_plus-*" \
+            2>/dev/null || true)
 
-          while IFS= read -r FILE; do
-            FOUND=1
-
-            echo "Patching: $FILE"
-
-            python3 - "$FILE" <<'PY'
-          from pathlib import Path
-          import re
-          import sys
-
-          path = Path(sys.argv[1])
-          text = path.read_text()
-
-          # Kotlin DSL
-          text = re.sub(
-              r'compileSdk\s*=\s*31',
-              'compileSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdk\s*=\s*flutter\.compileSdkVersion',
-              'compileSdk = 36',
-              text
-          )
-
-          # Groovy
-          text = re.sub(
-              r'compileSdk\s+31',
-              'compileSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdk\s+flutter\.compileSdkVersion',
-              'compileSdk 36',
-              text
-          )
-
-          path.write_text(text)
-          PY
-
-            echo "Patched gallery_saver_plus to compileSdk 36."
-
-            grep -n "compileSdk" "$FILE" || true
-
-          done < <(
-            find "$HOME/.pub-cache" \
-              -type f \
-              \( -path "*gallery_saver_plus*/android/build.gradle" \
-                 -o -path "*gallery_saver_plus*/android/build.gradle.kts" \)
-          )
-
-          if [ "$FOUND" -eq 0 ]; then
-            echo "ERROR: gallery_saver_plus Android build file was not found."
+          if [ -z "$GALLERY_DIRS" ]; then
+            echo "ERROR: gallery_saver_plus was not found in pub cache."
             exit 1
           fi
 
-          echo "gallery_saver_plus compileSdk fix completed."
+          for DIR in $GALLERY_DIRS; do
+            echo "Found: $DIR"
 
-      - name: Force all Android plugin modules to compileSdk 36
-        working-directory: build_app
-        run: |
-          set -e
-
-          echo "Checking Flutter pub cache for Android plugins using compileSdk 31..."
-
-          while IFS= read -r FILE; do
-            echo "Checking: $FILE"
-
-            python3 - "$FILE" <<'PY'
-          from pathlib import Path
-          import re
-          import sys
-
-          path = Path(sys.argv[1])
-          text = path.read_text()
-
-          original = text
-
-          # Fix explicit compileSdk 31
-          text = re.sub(
-              r'compileSdk\s*=\s*31',
-              'compileSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdk\s+31',
-              'compileSdk 36',
-              text
-          )
-
-          if text != original:
-              path.write_text(text)
-              print(f"UPDATED: {path}")
-          PY
-
-          done < <(
-            find "$HOME/.pub-cache/hosted/pub.dev" \
+            find "$DIR/android" \
               -type f \
               \( -name "build.gradle" -o -name "build.gradle.kts" \) \
-              2>/dev/null
+              -print \
+              2>/dev/null || true
+          done
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          home = Path.home()
+
+          matches = list(
+              home.glob(".pub-cache/hosted/pub.dev/gallery_saver_plus-*/android")
           )
 
-          echo "Android plugin compileSdk check completed."
+          if not matches:
+              raise SystemExit(
+                  "ERROR: gallery_saver_plus Android directory not found."
+              )
 
-      - name: Verify Android configuration
+          for android_dir in matches:
+              print(f"Patching gallery plugin: {android_dir}")
+
+              for path in android_dir.rglob("*"):
+                  if not path.is_file():
+                      continue
+
+                  if path.name not in (
+                      "build.gradle",
+                      "build.gradle.kts"
+                  ):
+                      continue
+
+                  text = path.read_text()
+
+                  # Replace any explicit Android 31 compileSdk.
+                  text = re.sub(
+                      r'compileSdk\s*=\s*31',
+                      'compileSdk = 36',
+                      text
+                  )
+
+                  text = re.sub(
+                      r'compileSdk\s+31',
+                      'compileSdk 36',
+                      text
+                  )
+
+                  # Replace Flutter's compile SDK reference too.
+                  text = re.sub(
+                      r'compileSdk\s*=\s*flutter\.compileSdkVersion',
+                      'compileSdk = 36',
+                      text
+                  )
+
+                  text = re.sub(
+                      r'compileSdk\s+flutter\.compileSdkVersion',
+                      'compileSdk 36',
+                      text
+                  )
+
+                  path.write_text(text)
+
+                  print(f"PATCHED: {path}")
+                  print(
+                      "\n".join(
+                          line for line in text.splitlines()
+                          if "compileSdk" in line
+                      )
+                  )
+
+          PY
+
+      - name: Verify FilePicker and Gallery fixes
         working-directory: build_app
         run: |
           set -e
 
-          echo "===== APP COMPILE SDK ====="
+          echo "===== FILE PICKER CHECK ====="
+
+          if grep -R "FilePicker.platform" lib; then
+            echo "ERROR: Old FilePicker.platform API still exists."
+            exit 1
+          fi
+
+          echo "FilePicker API is correct."
+
+          echo "===== MAIN APP SDK ====="
 
           if [ -f android/app/build.gradle.kts ]; then
             grep -n "compileSdk" android/app/build.gradle.kts || true
             grep -n "targetSdk" android/app/build.gradle.kts || true
-          elif [ -f android/app/build.gradle ]; then
+          else
             grep -n "compileSdk" android/app/build.gradle || true
             grep -n "targetSdk" android/app/build.gradle || true
           fi
 
-          echo "===== GALLERY SAVER PLUS ====="
+          echo "===== GALLERY SAVER SDK ====="
 
-          find "$HOME/.pub-cache" \
+          find "$HOME/.pub-cache/hosted/pub.dev" \
             -type f \
             \( -path "*gallery_saver_plus*/android/build.gradle" \
                -o -path "*gallery_saver_plus*/android/build.gradle.kts" \) \
             -print \
             -exec grep -n "compileSdk" {} \; || true
 
-          echo "===== LOGO ====="
-
           test -f assets/logo.png
 
-          echo "Android configuration verified."
+          echo "All configuration checks completed."
 
       - name: Build APK
         working-directory: build_app
@@ -404,7 +396,7 @@ jobs:
             exit 1
           fi
 
-          echo "APK successfully created:"
+          echo "APK CREATED SUCCESSFULLY"
           ls -lh "$APK"
 
       - name: Upload APK
