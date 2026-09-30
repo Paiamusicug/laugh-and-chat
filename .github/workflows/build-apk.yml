@@ -246,8 +246,10 @@ jobs:
           cp "$PROJECT_DIR/lib/main.dart" \
              build_app/lib/main.dart
 
-          cp "$PROJECT_DIR/lib/supabase_config.dart" \
-             build_app/lib/supabase_config.dart
+          cat > build_app/lib/supabase_config.dart <<EOF
+const String supabaseUrl = 'https://knedortbcjaaprmwuqqg.supabase.co';
+const String supabasePublishableKey = '${{ secrets.SUPABASE_PUBLISHABLE_KEY }}';
+EOF
 
           cp "$PROJECT_DIR/pubspec.yaml" \
              build_app/pubspec.yaml
