@@ -1,3 +1,4 @@
+
 name: Build Laugh & Chat Supabase APK
 
 on:
@@ -30,14 +31,15 @@ jobs:
       - name: Extract Supabase v3.0.3 project
         run: |
           set -e
-
           mkdir -p extracted
 
-          ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_3_DEPENDENCIES_STABLE.zip"
+          ZIP_FILE="./Laugh_and_Chat_Supabase_v3_0_3_FIXED_16_17.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: ZIP file not found:"
             echo "$ZIP_FILE"
+            echo "Available ZIP files:"
+            ls -1 ./*.zip || true
             exit 1
           fi
 
@@ -52,39 +54,31 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "======================================"
-          echo "Using Supabase project:"
-          echo "$PROJECT_DIR"
-          echo "======================================"
+          echo "Using Supabase project: $PROJECT_DIR"
 
       - name: Verify project files
         run: |
           set -e
-
           test -f "$PROJECT_DIR/pubspec.yaml"
           test -f "$PROJECT_DIR/lib/main.dart"
           test -f "$PROJECT_DIR/lib/supabase_config.dart"
           test -f "$PROJECT_DIR/assets/logo.png"
-
           echo "Project files verified."
 
       - name: Create Android project
         run: |
           set -e
-
           flutter create \
             --platforms=android \
             --org com.humblet \
             --project-name laughandchat \
             build_app
-
           echo "Android project created."
 
       - name: Configure Android project
         working-directory: build_app
         run: |
           set -e
-
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -93,133 +87,51 @@ jobs:
               Path("android/settings.gradle.kts"),
               Path("android/settings.gradle")
           ]
-
-          settings = next(
-              (p for p in settings_candidates if p.exists()),
-              None
-          )
-
+          settings = next((p for p in settings_candidates if p.exists()), None)
           if settings is None:
-              raise SystemExit(
-                  "ERROR: Android settings.gradle(.kts) not found."
-              )
+              raise SystemExit("ERROR: Android settings.gradle(.kts) not found.")
 
           text = settings.read_text()
-
           text = re.sub(
               r'(com\.android\.application["\']?\s+version\s+["\'])[^"\']+(["\'])',
-              r'\g<1>8.12.1\g<2>',
-              text
+              r'\g<1>8.12.1\g<2>', text
           )
-
           text = re.sub(
               r'(org\.jetbrains\.kotlin\.android["\']?\s+version\s+["\'])[^"\']+(["\'])',
-              r'\g<1>2.2.0\g<2>',
-              text
+              r'\g<1>2.2.0\g<2>', text
           )
-
           settings.write_text(text)
 
-          print(f"Configured: {settings}")
-
-          wrapper = Path(
-              "android/gradle/wrapper/gradle-wrapper.properties"
-          )
-
+          wrapper = Path("android/gradle/wrapper/gradle-wrapper.properties")
           if wrapper.exists():
               text = wrapper.read_text()
-
               text = re.sub(
                   r'gradle-[0-9.]+-(bin|all)\.zip',
-                  r'gradle-9.3.1-\1.zip',
-                  text
+                  r'gradle-9.3.1-\1.zip', text
               )
-
               wrapper.write_text(text)
-
-              print("Gradle wrapper configured for 9.3.1.")
 
           app_candidates = [
               Path("android/app/build.gradle.kts"),
               Path("android/app/build.gradle")
           ]
-
-          app = next(
-              (p for p in app_candidates if p.exists()),
-              None
-          )
-
+          app = next((p for p in app_candidates if p.exists()), None)
           if app is None:
-              raise SystemExit(
-                  "ERROR: android/app/build.gradle(.kts) not found."
-              )
+              raise SystemExit("ERROR: Android app Gradle file not found.")
 
           text = app.read_text()
-
-          text = re.sub(
-              r'compileSdk\s*=\s*flutter\.compileSdkVersion',
-              'compileSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdk\s+flutter\.compileSdkVersion',
-              'compileSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdk\s*=\s*31\b',
-              'compileSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdk\s+31\b',
-              'compileSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdkVersion\s*=?\s*31\b',
-              'compileSdkVersion 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdk\s*=\s*flutter\.targetSdkVersion',
-              'targetSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdk\s+flutter\.targetSdkVersion',
-              'targetSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdk\s*=\s*31\b',
-              'targetSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdk\s+31\b',
-              'targetSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdkVersion\s*=?\s*31\b',
-              'targetSdkVersion 36',
-              text
-          )
-
+          text = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', text)
+          text = re.sub(r'compileSdk\s+flutter\.compileSdkVersion', 'compileSdk 36', text)
+          text = re.sub(r'compileSdk\s*=\s*31\b', 'compileSdk = 36', text)
+          text = re.sub(r'compileSdk\s+31\b', 'compileSdk 36', text)
+          text = re.sub(r'compileSdkVersion\s*=?\s*31\b', 'compileSdkVersion 36', text)
+          text = re.sub(r'targetSdk\s*=\s*flutter\.targetSdkVersion', 'targetSdk = 36', text)
+          text = re.sub(r'targetSdk\s+flutter\.targetSdkVersion', 'targetSdk 36', text)
+          text = re.sub(r'targetSdk\s*=\s*31\b', 'targetSdk = 36', text)
+          text = re.sub(r'targetSdk\s+31\b', 'targetSdk 36', text)
+          text = re.sub(r'targetSdkVersion\s*=?\s*31\b', 'targetSdkVersion 36', text)
           app.write_text(text)
-
-          print(f"Main Android app configured: {app}")
-
+          print(f"Configured Android app: {app}")
           PY
 
       - name: Copy Supabase source
@@ -227,90 +139,61 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
           set -e
-
-          cp "$PROJECT_DIR/lib/main.dart" \
-             build_app/lib/main.dart
+          cp "$PROJECT_DIR/lib/main.dart" build_app/lib/main.dart
 
           printf '%s\n' \
             "const String supabaseUrl = 'https://knedortbcjaaprmwuqqg.supabase.co';" \
             "const String supabasePublishableKey = '$SUPABASE_PUBLISHABLE_KEY';" \
             > build_app/lib/supabase_config.dart
 
-          cp "$PROJECT_DIR/pubspec.yaml" \
-             build_app/pubspec.yaml
-
+          cp "$PROJECT_DIR/pubspec.yaml" build_app/pubspec.yaml
           rm -rf build_app/assets
-
-          cp -R "$PROJECT_DIR/assets" \
-             build_app/assets
-
+          cp -R "$PROJECT_DIR/assets" build_app/assets
           echo "Supabase source copied."
 
       - name: Verify Supabase key
         working-directory: build_app
         run: |
           set -e
-
           grep -q "sb_publishable_" lib/supabase_config.dart
-
           echo "PASS: Supabase publishable key configured."
 
       - name: Fix FilePicker API
         working-directory: build_app
         run: |
           set -e
-
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("lib/main.dart")
-
           text = path.read_text()
-
-          text = text.replace(
-              "FilePicker.platform.pickFiles(",
-              "FilePicker.pickFiles("
-          )
-
+          text = text.replace("FilePicker.platform.pickFiles(", "FilePicker.pickFiles(")
           path.write_text(text)
-
           if "FilePicker.platform" in text:
               print("WARNING: FilePicker.platform references remain.")
           else:
-              print("FilePicker API successfully updated.")
-
+              print("FilePicker API updated.")
           PY
-
-          echo "===== FILE PICKER REFERENCES ====="
           grep -n "FilePicker" lib/main.dart || true
 
       - name: Get dependencies
         working-directory: build_app
         run: |
           set -e
-
           flutter pub get
-
           echo "Dependencies installed successfully."
 
       - name: Verify dependencies
         working-directory: build_app
         run: |
           set -e
-
-          echo "===== FLUTTER VERSION ====="
           flutter --version
-
-          echo "===== PUB DEPENDENCIES ====="
           flutter pub deps --style=compact | head -100 || true
-
           echo "Dependencies verified."
 
       - name: Final Android SDK configuration
         working-directory: build_app
         run: |
           set -e
-
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -319,191 +202,57 @@ jobs:
               Path("android/app/build.gradle.kts"),
               Path("android/app/build.gradle")
           ]
-
-          app = next(
-              (p for p in app_candidates if p.exists()),
-              None
-          )
-
+          app = next((p for p in app_candidates if p.exists()), None)
           if app is None:
-              raise SystemExit(
-                  "ERROR: Main Android build file not found."
-              )
+              raise SystemExit("ERROR: Main Android build file not found.")
 
           text = app.read_text()
-
-          text = re.sub(
-              r'compileSdk\s*=\s*flutter\.compileSdkVersion',
-              'compileSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdk\s+flutter\.compileSdkVersion',
-              'compileSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdk\s*=\s*31\b',
-              'compileSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdk\s+31\b',
-              'compileSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'compileSdkVersion\s*=?\s*31\b',
-              'compileSdkVersion 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdk\s*=\s*flutter\.targetSdkVersion',
-              'targetSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdk\s+flutter\.targetSdkVersion',
-              'targetSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdk\s*=\s*31\b',
-              'targetSdk = 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdk\s+31\b',
-              'targetSdk 36',
-              text
-          )
-
-          text = re.sub(
-              r'targetSdkVersion\s*=?\s*31\b',
-              'targetSdkVersion 36',
-              text
-          )
-
+          text = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', text)
+          text = re.sub(r'compileSdk\s+flutter\.compileSdkVersion', 'compileSdk 36', text)
+          text = re.sub(r'compileSdk\s*=\s*31\b', 'compileSdk = 36', text)
+          text = re.sub(r'compileSdk\s+31\b', 'compileSdk 36', text)
+          text = re.sub(r'compileSdkVersion\s*=?\s*31\b', 'compileSdkVersion 36', text)
+          text = re.sub(r'targetSdk\s*=\s*flutter\.targetSdkVersion', 'targetSdk = 36', text)
+          text = re.sub(r'targetSdk\s+flutter\.targetSdkVersion', 'targetSdk 36', text)
+          text = re.sub(r'targetSdk\s*=\s*31\b', 'targetSdk = 36', text)
+          text = re.sub(r'targetSdk\s+31\b', 'targetSdk 36', text)
+          text = re.sub(r'targetSdkVersion\s*=?\s*31\b', 'targetSdkVersion 36', text)
           app.write_text(text)
-
-          print("Main Android application forced to SDK 36.")
+          print("Main Android app configured for SDK 36.")
 
           pub_cache = Path.home() / ".pub-cache"
-
-          gallery_dirs = list(
-              pub_cache.glob(
-                  "hosted/pub.dev/gallery_saver_plus-*/android"
-              )
-          )
-
+          gallery_dirs = list(pub_cache.glob("hosted/pub.dev/gallery_saver_plus-*/android"))
           if not gallery_dirs:
-              raise SystemExit(
-                  "ERROR: gallery_saver_plus Android directory not found."
-              )
-
-          print("gallery_saver_plus directories found:")
-
-          for directory in gallery_dirs:
-              print(directory)
+              raise SystemExit("ERROR: gallery_saver_plus Android directory not found.")
 
           for android_dir in gallery_dirs:
-
               gradle_files = list(android_dir.rglob("*.gradle"))
               gradle_files += list(android_dir.rglob("*.gradle.kts"))
-
               if not gradle_files:
-                  raise SystemExit(
-                      f"ERROR: No Gradle files found in {android_dir}"
-                  )
+                  raise SystemExit(f"ERROR: No Gradle files found in {android_dir}")
 
               for path in gradle_files:
-
                   text = path.read_text()
-
-                  text = re.sub(
-                      r'\bcompileSdkVersion\s*=?\s*31\b',
-                      'compileSdkVersion 36',
-                      text
-                  )
-
-                  text = re.sub(
-                      r'\bcompileSdk\s*=\s*31\b',
-                      'compileSdk = 36',
-                      text
-                  )
-
-                  text = re.sub(
-                      r'\bcompileSdk\s+31\b',
-                      'compileSdk 36',
-                      text
-                  )
-
-                  text = re.sub(
-                      r'\bcompileSdkVersion\s+flutter\.compileSdkVersion\b',
-                      'compileSdkVersion 36',
-                      text
-                  )
-
-                  text = re.sub(
-                      r'\bcompileSdk\s*=\s*flutter\.compileSdkVersion\b',
-                      'compileSdk = 36',
-                      text
-                  )
-
-                  text = re.sub(
-                      r'\bcompileSdk\s+flutter\.compileSdkVersion\b',
-                      'compileSdk 36',
-                      text
-                  )
-
+                  text = re.sub(r'\bcompileSdkVersion\s*=?\s*31\b', 'compileSdkVersion 36', text)
+                  text = re.sub(r'\bcompileSdk\s*=\s*31\b', 'compileSdk = 36', text)
+                  text = re.sub(r'\bcompileSdk\s+31\b', 'compileSdk 36', text)
+                  text = re.sub(r'\bcompileSdkVersion\s+flutter\.compileSdkVersion\b', 'compileSdkVersion 36', text)
+                  text = re.sub(r'\bcompileSdk\s*=\s*flutter\.compileSdkVersion\b', 'compileSdk = 36', text)
+                  text = re.sub(r'\bcompileSdk\s+flutter\.compileSdkVersion\b', 'compileSdk 36', text)
                   path.write_text(text)
-
                   print(f"PATCHED: {path}")
-
-                  for line in text.splitlines():
-                      if "compileSdk" in line:
-                          print("   " + line.strip())
-
           PY
 
       - name: Verify final Android configuration
         working-directory: build_app
         run: |
           set -e
-
-          echo ""
-          echo "======================================"
-          echo "SUPABASE CONFIG CHECK"
-          echo "======================================"
-
           grep -q "sb_publishable_" lib/supabase_config.dart
-
-          echo "PASS: Supabase publishable key exists."
-
-          echo ""
-          echo "======================================"
-          echo "FILE PICKER CHECK"
-          echo "======================================"
 
           if grep -R "FilePicker.platform" lib; then
             echo "ERROR: Old FilePicker.platform API still exists."
             exit 1
           fi
-
-          echo "PASS: FilePicker API is correct."
-
-          echo ""
-          echo "======================================"
-          echo "MAIN APP SDK CHECK"
-          echo "======================================"
 
           if [ -f android/app/build.gradle.kts ]; then
             grep -n "compileSdk" android/app/build.gradle.kts || true
@@ -512,11 +261,6 @@ jobs:
             grep -n "compileSdk" android/app/build.gradle || true
             grep -n "targetSdk" android/app/build.gradle || true
           fi
-
-          echo ""
-          echo "======================================"
-          echo "GALLERY SAVER SDK CHECK"
-          echo "======================================"
 
           GALLERY_FILES=$(find "$HOME/.pub-cache/hosted/pub.dev" \
             -type f \
@@ -534,49 +278,24 @@ jobs:
             grep -n "compileSdk" "$FILE" || true
           done
 
-          echo ""
-          echo "======================================"
-          echo "ASSET CHECK"
-          echo "======================================"
-
           test -f assets/logo.png
-
-          echo "PASS: assets/logo.png exists."
-
-          echo ""
-          echo "======================================"
-          echo "CONFIGURATION CHECKS PASSED"
-          echo "======================================"
+          echo "Configuration checks passed."
 
       - name: Build APK
         working-directory: build_app
         run: |
           set -e
-
-          echo "======================================"
-          echo "BUILDING LAUGH & CHAT APK"
-          echo "======================================"
-
           flutter build apk --debug
-
-          echo ""
           echo "APK BUILD COMPLETED."
 
       - name: Verify APK
         run: |
           set -e
-
           APK="build_app/build/app/outputs/flutter-apk/app-debug.apk"
-
           if [ ! -f "$APK" ]; then
             echo "ERROR: APK was not created."
             exit 1
           fi
-
-          echo "======================================"
-          echo "APK CREATED SUCCESSFULLY"
-          echo "======================================"
-
           ls -lh "$APK"
 
       - name: Upload APK
@@ -584,3 +303,4 @@ jobs:
         with:
           name: laugh-and-chat-supabase-v3-0-3
           path: build_app/build/app/outputs/flutter-apk/app-debug.apk
+          
